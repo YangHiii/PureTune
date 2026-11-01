@@ -317,10 +317,10 @@ struct SettingsView: View {
     private var versionText: String {
         let version = Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "2.1.1"
+        ) as? String ?? "2.1.2"
         let build = Bundle.main.object(
             forInfoDictionaryKey: "CFBundleVersion"
-        ) as? String ?? "3"
+        ) as? String ?? "5"
         return "\(version) (\(build))"
     }
 }
