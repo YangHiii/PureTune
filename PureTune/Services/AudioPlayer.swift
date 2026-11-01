@@ -154,6 +154,7 @@ final class AudioPlayer: ObservableObject {
 
     func resume() {
         guard let song = currentSong else { return }
+        shouldResumeAfterRouteChange = false
 
         guard let node = activeNode, currentFile != nil else {
             startTrack(song, at: clock.time, autoplay: true, markPlayed: false)
@@ -180,6 +181,7 @@ final class AudioPlayer: ObservableObject {
     func pause() {
         guard isPlaying else { return }
 
+        syncClockFromPlayer()
         cancelFades()
         for node in [playerA, playerB] where node !== activeNode {
             node.stop()
