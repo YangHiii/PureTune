@@ -790,6 +790,7 @@ final class AudioPlayer: ObservableObject {
             settings.$customEqualizerGains
         )
         .dropFirst()
+        .debounce(for: .milliseconds(45), scheduler: RunLoop.main)
         .sink { [weak self] _, _, _ in
             Task { @MainActor [weak self] in
                 self?.applyEqualizerSettings(animated: true)

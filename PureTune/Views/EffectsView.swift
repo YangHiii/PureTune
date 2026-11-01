@@ -10,7 +10,10 @@ struct EffectsView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 header
-                equalizerCard
+                equalizerHeaderCard
+                equalizerPresetCard
+                equalizerBandsCard
+                equalizerHelpCard
                 enhancementCard
                 sourceInformationCard
                 resetCard
@@ -51,10 +54,10 @@ struct EffectsView: View {
         }
     }
 
-    private var equalizerCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Label("均衡器", systemImage: "slider.horizontal.3")
+    private var equalizerHeaderCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Label("均衡器", systemImage: "slider.vertical.3")
                     .font(.system(size: 19, weight: .bold, design: .rounded))
                     .foregroundStyle(AppTheme.textPrimary)
 
@@ -66,9 +69,44 @@ struct EffectsView: View {
                     .accessibilityLabel("均衡器开关")
             }
 
-            Text(settings.equalizerEnabled ? "10 段 EQ 已接入播放链路" : "EQ 已旁路，声音保持原始")
-                .font(.caption)
-                .foregroundStyle(AppTheme.textTertiary)
+            HStack(spacing: 8) {
+                EqualizerStatusPill(
+                    text: settings.equalizerEnabled ? "处理已启用" : "处理已旁路",
+                    isActive: settings.equalizerEnabled
+                )
+
+                EqualizerStatusPill(
+                    text: "当前预设：\(settings.equalizerPreset.title)",
+                    isActive: false
+                )
+            }
+
+            Text(
+                settings.equalizerEnabled
+                    ? "10 段均衡器已接入当前播放链路，开关会真实改变音频处理。"
+                    : "均衡器已旁路，播放保持原始声音；打开开关后才会处理音频。"
+            )
+            .font(.caption)
+            .foregroundStyle(AppTheme.textTertiary)
+            .lineSpacing(2)
+        }
+        .padding(18)
+        .glassPanel(cornerRadius: 27, tint: AppTheme.ice, strokeOpacity: 0.15)
+    }
+
+    private var equalizerPresetCard: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                Label("音效预设", systemImage: "square.stack.3d.up.fill")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary)
+
+                Spacer()
+
+                Text("\(EqualizerPreset.allCases.count) 种")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(AppTheme.textTertiary)
+            }
 
             ScrollView(.horizontal) {
                 HStack(spacing: 8) {
@@ -81,43 +119,110 @@ struct EffectsView: View {
                         }
                     }
                 }
+                .padding(.vertical, 1)
             }
             .scrollIndicators(.hidden)
 
-            VStack(spacing: 11) {
-                ForEach(Array(SettingsManager.frequencies.enumerated()), id: \.offset) { index, frequency in
-                    EqualizerBandRow(
-                        frequency: frequency,
-                        gain: bandGain(at: index),
-                        enabled: settings.equalizerEnabled,
-                        binding: bandBinding(at: index)
-                    )
-                }
+            Text("选择预设会同步移动下方 10 段滑杆；手动调节任意频段后会自动切换为“自定义”。")
+                .font(.caption2)
+                .foregroundStyle(AppTheme.textTertiary.opacity(0.82))
+        }
+        .padding(18)
+        .glassPanel(cornerRadius: 24, tint: AppTheme.lavender, strokeOpacity: 0.13)
+    }
+
+    private var equalizerBandsCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("10 段均衡", systemImage: "chart.bar.fill")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary)
+
+                Spacer()
+
+                Text("±12 dB")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(AppTheme.textTertiary)
             }
 
+            ScrollView(.horizontal) {
+                HStack(alignment: .bottom, spacing: 3) {
+                    ForEach(
+                        Array(SettingsManager.frequencies.enumerated()),
+                        id: \.offset
+                    ) { index, frequency in
+                        VerticalEqualizerBand(
+                            frequency: frequency,
+                            gain: bandGain(at: index),
+                            enabled: settings.equalizerEnabled,
+                            binding: bandBinding(at: index)
+                        )
+                    }
+                }
+                .padding(.horizontal, 2)
+                .padding(.vertical, 2)
+            }
+            .scrollIndicators(.hidden)
+
             HStack {
-                Text("增益范围限制为 ±12 dB，并为正增益预留前级余量。")
+                Text("频率（Hz）")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(AppTheme.textTertiary.opacity(0.75))
+
+                Spacer()
+
+                HStack(spacing: 5) {
+                    Rectangle()
+                        .fill(AppTheme.hairline.opacity(0.9))
+                        .frame(width: 18, height: 0.8)
+
+                    Text("0 dB 中线")
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(AppTheme.textTertiary.opacity(0.75))
+                }
+            }
+        }
+        .padding(18)
+        .glassPanel(cornerRadius: 27, tint: AppTheme.mint, strokeOpacity: 0.14)
+    }
+
+    private var equalizerHelpCard: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            Label("音效说明", systemImage: "info.circle.fill")
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundStyle(AppTheme.textPrimary)
+
+            Text("31 Hz 到 16 kHz 共 10 个真实频段。增益范围限制为 ±12 dB，正增益会自动预留前级余量，参数切换使用短时平滑过渡。")
+                .font(.caption)
+                .foregroundStyle(AppTheme.textTertiary)
+                .lineSpacing(2)
+
+            HStack {
+                Text("恢复后会回到原声预设与 0 dB。")
                     .font(.caption2)
-                    .foregroundStyle(AppTheme.textTertiary.opacity(0.8))
+                    .foregroundStyle(AppTheme.textTertiary.opacity(0.78))
 
                 Spacer()
 
                 Button {
-                    settings.selectPreset(.flat)
-                    settings.customEqualizerGains = Array(
-                        repeating: 0,
-                        count: SettingsManager.frequencies.count
-                    )
+                    settings.resetEqualizer()
                 } label: {
-                    Label("重置 EQ", systemImage: "arrow.counterclockwise")
+                    Label("恢复默认 EQ", systemImage: "arrow.counterclockwise")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(AppTheme.textSecondary)
+                        .padding(.horizontal, 12)
+                        .frame(height: 32)
+                        .background(AppTheme.controlFill, in: Capsule())
+                        .overlay {
+                            Capsule()
+                                .stroke(AppTheme.hairline.opacity(0.55), lineWidth: 0.6)
+                        }
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(18)
-        .glassPanel(cornerRadius: 27, tint: AppTheme.ice, strokeOpacity: 0.15)
+        .glassPanel(cornerRadius: 24, tint: AppTheme.warm, strokeOpacity: 0.11)
     }
 
     private var enhancementCard: some View {
@@ -358,35 +463,149 @@ struct EffectsView: View {
     }
 }
 
-private struct EqualizerBandRow: View {
+private struct VerticalEqualizerBand: View {
     let frequency: Float
     let gain: Float
     let enabled: Bool
     @Binding var binding: Double
 
+    private let trackHeight: CGFloat = 136
+    private let columnWidth: CGFloat = 30
+
     private var frequencyText: String {
         if frequency >= 1_000 {
-            return "\(Int(frequency / 1_000)) kHz"
+            return "\(Int(frequency / 1_000))k"
         }
-        return "\(Int(frequency)) Hz"
+        return "\(Int(frequency))"
     }
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(frequencyText)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(AppTheme.textTertiary)
-                .frame(width: 48, alignment: .leading)
-
-            Slider(value: $binding, in: -12...12, step: 0.5)
-                .tint(enabled ? AppTheme.ice : AppTheme.textTertiary)
-
-            Text(String(format: "%+.1f dB", gain))
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+        VStack(spacing: 5) {
+            Text(String(format: "%+.1f", gain))
+                .font(.system(size: 8, weight: .semibold, design: .monospaced))
                 .foregroundStyle(enabled ? AppTheme.textSecondary : AppTheme.textTertiary)
-                .frame(width: 62, alignment: .trailing)
+                .frame(width: columnWidth, height: 10)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            GeometryReader { proxy in
+                let height = proxy.size.height
+                let width = proxy.size.width
+                let centerY = height / 2
+                let usableHeight = max(height - 14, 1)
+                let normalized = CGFloat(min(max(gain, -12), 12)) / 12
+                let thumbY = centerY - normalized * usableHeight / 2
+                let fillHeight = abs(normalized) * usableHeight / 2
+                let fillY = normalized >= 0
+                    ? centerY - fillHeight / 2
+                    : centerY + fillHeight / 2
+
+                ZStack {
+                    Capsule()
+                        .fill(AppTheme.textTertiary.opacity(0.16))
+                        .frame(width: 3, height: usableHeight)
+
+                    Rectangle()
+                        .fill(AppTheme.hairline.opacity(0.82))
+                        .frame(width: 22, height: 0.7)
+                        .position(x: width / 2, y: centerY)
+
+                    if abs(normalized) > 0.005 {
+                        Capsule()
+                            .fill(
+                                enabled
+                                    ? AppTheme.ice.opacity(0.92)
+                                    : AppTheme.textTertiary.opacity(0.42)
+                            )
+                            .frame(width: 3, height: max(fillHeight, 2))
+                            .position(x: width / 2, y: fillY)
+                    }
+
+                    Circle()
+                        .fill(enabled ? AppTheme.ice : AppTheme.textTertiary.opacity(0.7))
+                        .frame(width: 15, height: 15)
+                        .overlay {
+                            Circle()
+                                .stroke(Color.white.opacity(0.58), lineWidth: 0.6)
+                        }
+                        .shadow(
+                            color: enabled ? AppTheme.ice.opacity(0.28) : .clear,
+                            radius: 5,
+                            y: 2
+                        )
+                        .position(x: width / 2, y: thumbY)
+                }
+                .frame(width: width, height: height)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            updateGain(
+                                locationY: value.location.y,
+                                availableHeight: height
+                            )
+                        }
+                )
+            }
+            .frame(width: columnWidth, height: trackHeight)
+
+            Text(frequencyText)
+                .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                .foregroundStyle(enabled ? AppTheme.textTertiary : AppTheme.textTertiary.opacity(0.6))
+                .frame(width: columnWidth, height: 10)
+                .lineLimit(1)
         }
+        .frame(width: columnWidth)
         .opacity(enabled ? 1 : 0.66)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(frequencyText) 赫兹")
+        .accessibilityValue(String(format: "%+.1f dB", gain))
+        .accessibilityAdjustableAction { direction in
+            guard enabled else { return }
+
+            switch direction {
+            case .increment:
+                binding = min(binding + 0.5, 12)
+            case .decrement:
+                binding = max(binding - 0.5, -12)
+            @unknown default:
+                break
+            }
+        }
+    }
+
+    private func updateGain(locationY: CGFloat, availableHeight: CGFloat) {
+        guard enabled else { return }
+
+        let centerY = availableHeight / 2
+        let halfRange = max((availableHeight - 14) / 2, 1)
+        let normalized = (centerY - locationY) / halfRange
+        let value = min(max(Double(normalized * 12), -12), 12)
+        binding = (value * 2).rounded() / 2
+    }
+}
+
+private struct EqualizerStatusPill: View {
+    let text: String
+    let isActive: Bool
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9, weight: .semibold, design: .rounded))
+            .foregroundStyle(isActive ? AppTheme.mint : AppTheme.textSecondary)
+            .padding(.horizontal, 9)
+            .frame(height: 24)
+            .background(
+                (isActive ? AppTheme.mint : AppTheme.textTertiary).opacity(0.12),
+                in: Capsule()
+            )
+            .overlay {
+                Capsule()
+                    .stroke(
+                        (isActive ? AppTheme.mint : AppTheme.hairline).opacity(0.24),
+                        lineWidth: 0.6
+                    )
+            }
     }
 }
 
