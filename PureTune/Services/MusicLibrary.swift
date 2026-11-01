@@ -119,17 +119,10 @@ final class MusicLibrary: ObservableObject {
 
         let fileName = "\(UUID().uuidString).\(pathExtension)"
         let destination = musicDirectory.appendingPathComponent(fileName)
-        let didAccess = source.startAccessingSecurityScopedResource()
-
-        defer {
-            if didAccess {
-                source.stopAccessingSecurityScopedResource()
-            }
-        }
 
         do {
             try await Task.detached(priority: .userInitiated) {
-                try FileManager.default.copyItem(at: source, to: destination)
+                try Self.copyIntoLibrary(from: source, to: destination)
             }.value
 
             return try await readSong(
@@ -143,14 +136,58 @@ final class MusicLibrary: ObservableObject {
         }
     }
 
+    nonisolated private static func copyIntoLibrary(from source: URL, to destination: URL) throws {
+        let didAccess = source.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                source.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        var coordinatorError: NSError?
+        var copyError: Error?
+
+        NSFileCoordinator(filePresenter: nil).coordinate(
+            readingItemAt: source,
+            options: .withoutChanges,
+            error: &coordinatorError
+        ) { coordinatedURL in
+            do {
+                try FileManager.default.copyItem(at: coordinatedURL, to: destination)
+            } catch {
+                copyError = error
+            }
+        }
+
+        if let coordinatorError {
+            throw coordinatorError
+        }
+        if let copyError {
+            throw copyError
+        }
+
+        let size = try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size > 0 else {
+            throw ImportFailure.emptyFile
+        }
+    }
+
     private func readSong(
         at url: URL,
         fileName: String,
         fallbackTitle: String
     ) async throws -> Song {
         let asset = AVURLAsset(url: url)
-        let isPlayable = try await asset.load(.isPlayable)
-        let durationTime = try await asset.load(.duration)
+        let isPlayable: Bool
+        let durationTime: CMTime
+
+        do {
+            isPlayable = try await asset.load(.isPlayable)
+            durationTime = try await asset.load(.duration)
+        } catch {
+            throw ImportFailure.notPlayable
+        }
+
         let duration = CMTimeGetSeconds(durationTime)
 
         guard isPlayable, duration.isFinite, duration > 0 else {
@@ -235,12 +272,15 @@ final class MusicLibrary: ObservableObject {
 
 private enum ImportFailure: LocalizedError {
     case missingFileExtension
+    case emptyFile
     case notPlayable
 
     var errorDescription: String? {
         switch self {
         case .missingFileExtension:
             return "文件缺少扩展名，无法识别音频格式。"
+        case .emptyFile:
+            return "文件内容为空，无法导入。"
         case .notPlayable:
             return "文件无法解码或不是有效的音频文件。"
         }

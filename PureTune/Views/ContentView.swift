@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var songToDelete: Song?
     @State private var showingDeleteConfirmation = false
 
+    private static let importContentTypes: [UTType] = [.audio, .data]
+
     private var filteredSongs: [Song] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return library.songs }
@@ -83,7 +85,7 @@ struct ContentView: View {
             }
             .fileImporter(
                 isPresented: $showingImporter,
-                allowedContentTypes: [.audio],
+                allowedContentTypes: Self.importContentTypes,
                 allowsMultipleSelection: true
             ) { result in
                 handleImportResult(result)
