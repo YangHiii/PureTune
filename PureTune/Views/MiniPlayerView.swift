@@ -87,7 +87,7 @@ struct MiniPlayerView: View {
                 endPoint: .bottomTrailing
             )
 
-            if let image = audio.currentArtwork {
+            if let image = audio.artwork(for: song) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()

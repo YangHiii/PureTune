@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct NowPlayingView: View {
     @EnvironmentObject private var audio: AudioPlayer
@@ -6,6 +7,8 @@ struct NowPlayingView: View {
     @EnvironmentObject private var settings: SettingsManager
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let onOpenEffects: () -> Void
 
@@ -53,7 +56,7 @@ struct NowPlayingView: View {
 
     @ViewBuilder
     private var playingBackground: some View {
-        if let image = audio.currentArtwork {
+        if let song = audio.currentSong, let image = audio.artwork(for: song) {
             ZStack {
                 Image(uiImage: image)
                     .resizable()
@@ -182,7 +185,7 @@ struct NowPlayingView: View {
                 endPoint: .bottomTrailing
             )
 
-            if let image = audio.currentArtwork {
+            if let image = audio.artwork(for: song) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
@@ -258,21 +261,28 @@ struct NowPlayingView: View {
 
     private func songInformation(_ song: Song) -> some View {
         VStack(spacing: 7) {
-            Text(song.title)
-                .font(.system(size: 26, weight: .bold, design: .rounded))
-                .foregroundStyle(AppTheme.textPrimary)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
+            MarqueeText(
+                text: song.title,
+                font: roundedSystemFont(size: 26, weight: .bold),
+                textColor: titleUIColor,
+                isActive: scenePhase == .active && !reduceMotion
+            )
+            .frame(maxWidth: .infinity)
+            .frame(height: 38)
+            .id(song.id)
+            .accessibilityLabel(song.title)
 
             Text(song.displayArtist)
                 .font(.headline.weight(.regular))
                 .foregroundStyle(AppTheme.textSecondary)
                 .lineLimit(1)
+                .truncationMode(.tail)
 
             Text(song.displayAlbum)
                 .font(.subheadline)
                 .foregroundStyle(AppTheme.textTertiary)
                 .lineLimit(1)
+                .truncationMode(.tail)
 
             metadataChips
                 .padding(.top, 2)
@@ -456,6 +466,20 @@ struct NowPlayingView: View {
     private var currentPalette: [Color] {
         guard let song = audio.currentSong else { return [AppTheme.ice] }
         return ArtworkPalette.colors(for: song)
+    }
+
+    private func roundedSystemFont(size: CGFloat, weight: UIFont.Weight) -> UIFont {
+        let base = UIFont.systemFont(ofSize: size, weight: weight)
+        guard let descriptor = base.fontDescriptor.withDesign(.rounded) else {
+            return base
+        }
+        return UIFont(descriptor: descriptor, size: size)
+    }
+
+    private var titleUIColor: UIColor {
+        isDark
+            ? .white
+            : UIColor(red: 0.08, green: 0.10, blue: 0.16, alpha: 1)
     }
 }
 

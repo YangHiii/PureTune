@@ -24,6 +24,11 @@ final class AudioPlayer: ObservableObject {
         return "\(queuePosition) / \(queueCount)"
     }
 
+    func artwork(for song: Song) -> UIImage? {
+        guard currentArtworkSongID == song.id else { return nil }
+        return currentArtwork
+    }
+
     private let settings: SettingsManager
     private var engine = AVAudioEngine()
     private let playerA = AVAudioPlayerNode()
@@ -38,6 +43,7 @@ final class AudioPlayer: ObservableObject {
     private var currentURLProvider: ((Song) -> URL)?
     private var activeNode: AVAudioPlayerNode?
     private var currentFile: AVAudioFile?
+    private var currentArtworkSongID: UUID?
     private var currentSampleRate: Double = 48_000
     private var segmentStartFrame: AVAudioFramePosition = 0
     private var playbackGeneration = 0
@@ -308,6 +314,7 @@ final class AudioPlayer: ObservableObject {
         currentURLProvider = nil
         currentSong = nil
         currentArtwork = nil
+        currentArtworkSongID = nil
         currentSourceInfo = nil
         currentNormalizationGainDB = 0
         nowPlayingArtwork = nil
@@ -383,6 +390,7 @@ final class AudioPlayer: ObservableObject {
         playbackError = nil
         currentSourceInfo = nil
         currentArtwork = ArtworkStore.shared.cachedArtwork(for: song.fileName)
+        currentArtworkSongID = song.id
         nowPlayingArtwork = nil
         clock.update(target)
         activeNode = newNode
@@ -577,6 +585,7 @@ final class AudioPlayer: ObservableObject {
             }
 
             currentArtwork = image
+            currentArtworkSongID = song.id
             if let image {
                 nowPlayingArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             } else {
