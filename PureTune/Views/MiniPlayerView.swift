@@ -2,14 +2,8 @@ import SwiftUI
 
 struct MiniPlayerView: View {
     @EnvironmentObject private var audio: AudioPlayer
-    @EnvironmentObject private var clock: PlaybackClock
 
     let onOpen: () -> Void
-
-    private var progress: Double {
-        guard audio.duration > 0 else { return 0 }
-        return min(max(clock.time / audio.duration, 0), 1)
-    }
 
     var body: some View {
         if let song = audio.currentSong {
@@ -62,16 +56,7 @@ struct MiniPlayerView: View {
     }
 
     private var progressBar: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(AppTheme.textTertiary.opacity(0.16))
-
-                Capsule()
-                    .fill(AppTheme.accentGradient)
-                    .frame(width: proxy.size.width * progress)
-            }
-        }
+        MiniPlaybackProgress()
         .frame(height: 2)
         .padding(.horizontal, 24)
         .padding(.top, 2)
@@ -126,5 +111,28 @@ struct MiniPlayerView: View {
         }
         .buttonStyle(ScaleButtonStyle())
         .accessibilityLabel(label)
+    }
+}
+
+private struct MiniPlaybackProgress: View {
+    @EnvironmentObject private var audio: AudioPlayer
+    @EnvironmentObject private var clock: PlaybackClock
+
+    private var progress: Double {
+        guard audio.duration > 0 else { return 0 }
+        return min(max(clock.time / audio.duration, 0), 1)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(AppTheme.textTertiary.opacity(0.16))
+
+                Capsule()
+                    .fill(AppTheme.accentGradient)
+                    .frame(width: proxy.size.width * progress)
+            }
+        }
     }
 }

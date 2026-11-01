@@ -78,6 +78,7 @@ enum AppTheme {
 struct AuroraBackground: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @State private var isExpanded = false
 
     private var isDark: Bool {
@@ -137,13 +138,31 @@ struct AuroraBackground: View {
         }
         .ignoresSafeArea()
         .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(
-                .easeInOut(duration: 12)
-                .repeatForever(autoreverses: true)
-            ) {
-                isExpanded = true
+            updateAmbientAnimation()
+        }
+        .onChange(of: scenePhase) { _ in
+            updateAmbientAnimation()
+        }
+        .onChange(of: reduceMotion) { _ in
+            updateAmbientAnimation()
+        }
+    }
+
+    private func updateAmbientAnimation() {
+        guard scenePhase == .active, !reduceMotion else {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                isExpanded = false
             }
+            return
+        }
+
+        withAnimation(
+            .easeInOut(duration: 12)
+            .repeatForever(autoreverses: true)
+        ) {
+            isExpanded = true
         }
     }
 }
