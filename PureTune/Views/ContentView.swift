@@ -69,6 +69,12 @@ struct ContentView: View {
         pendingPickedURLs = urls
         pickerReturnedNoFiles = urls.isEmpty
         showingPicker = false
+
+        if !urls.isEmpty {
+            Task { @MainActor in
+                processPendingPickedFiles()
+            }
+        }
     }
 
     private func processPendingPickedFiles() {
@@ -132,6 +138,23 @@ private struct ImportOverlay: View {
                         .font(.caption)
                         .foregroundStyle(AppTheme.textSecondary)
                 }
+
+                Button {
+                    library.cancelImport()
+                } label: {
+                    Text(library.isImportCancelling ? "正在取消…" : "取消导入")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppTheme.textSecondary)
+                        .padding(.horizontal, 14)
+                        .frame(height: 32)
+                        .background(AppTheme.controlFill, in: Capsule())
+                        .overlay {
+                            Capsule()
+                                .stroke(AppTheme.hairline.opacity(0.6), lineWidth: 0.6)
+                        }
+                }
+                .buttonStyle(.plain)
+                .disabled(library.isImportCancelling)
             }
             .padding(.horizontal, 28)
             .padding(.vertical, 25)

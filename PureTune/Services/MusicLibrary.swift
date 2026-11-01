@@ -20,7 +20,11 @@ struct ImportProgress: Equatable {
     }
 
     var statusText: String {
-        "正在处理 \(completed) / \(total)"
+        guard total > 0 else { return "正在准备文件" }
+        if completed >= total {
+            return "正在完成 \(total) / \(total)"
+        }
+        return "正在导入第 \(completed + 1) / \(total) 首"
     }
 }
 
@@ -29,6 +33,7 @@ final class MusicLibrary: ObservableObject {
     @Published private(set) var songs: [Song] = []
     @Published private(set) var recentlyPlayedIDs: [UUID] = []
     @Published private(set) var isImporting = false
+    @Published private(set) var isImportCancelling = false
     @Published private(set) var importProgress: ImportProgress?
     @Published var importAlert: ImportAlert?
 
@@ -36,6 +41,7 @@ final class MusicLibrary: ObservableObject {
     private let musicDirectory: URL
     private let indexURL: URL
     private let historyURL: URL
+    private var importCancellationRequested = false
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
@@ -91,26 +97,47 @@ final class MusicLibrary: ObservableObject {
         }
 
         isImporting = true
+        isImportCancelling = false
+        importCancellationRequested = false
         defer {
             isImporting = false
+            isImportCancelling = false
+            importCancellationRequested = false
             importProgress = nil
         }
 
         var importedSongs: [Song] = []
+        var skippedCount = 0
         var issues: [String] = []
 
         for (index, source) in urls.enumerated() {
+            if importCancellationRequested {
+                break
+            }
+
             importProgress = ImportProgress(
-                completed: index + 1,
+                completed: index,
                 total: urls.count,
                 fileName: source.lastPathComponent
             )
 
             do {
-                importedSongs.append(try await importFile(source))
+                let imported = try await importFile(source)
+                if isDuplicate(imported, in: songs) || isDuplicate(imported, in: importedSongs) {
+                    try? fileManager.removeItem(at: fileURL(for: imported))
+                    skippedCount += 1
+                } else {
+                    importedSongs.append(imported)
+                }
             } catch {
                 issues.append("\(source.lastPathComponent)：\(error.localizedDescription)")
             }
+
+            importProgress = ImportProgress(
+                completed: index + 1,
+                total: urls.count,
+                fileName: source.lastPathComponent
+            )
         }
 
         if !importedSongs.isEmpty {
@@ -123,7 +150,18 @@ final class MusicLibrary: ObservableObject {
             }
         }
 
-        if issues.isEmpty {
+        if importCancellationRequested {
+            let importedText = importedSongs.isEmpty
+                ? "本次没有保存新歌曲。"
+                : "已保存 \(importedSongs.count) 首歌曲。"
+            importAlert = ImportAlert(
+                title: "导入已取消",
+                message: "\(importedText)未处理的文件已停止导入。"
+            )
+            return
+        }
+
+        if issues.isEmpty && skippedCount == 0 {
             importAlert = ImportAlert(
                 title: "导入完成",
                 message: "已成功导入 \(importedSongs.count) 首歌曲。"
@@ -132,17 +170,32 @@ final class MusicLibrary: ObservableObject {
         }
 
         let details = issues.prefix(5).joined(separator: "\n")
-        if importedSongs.isEmpty {
+        if importedSongs.isEmpty, skippedCount > 0, issues.isEmpty {
+            importAlert = ImportAlert(
+                title: "没有新增歌曲",
+                message: "这 \(skippedCount) 首歌曲已经在曲库中，无需重复导入。"
+            )
+        } else if importedSongs.isEmpty {
             importAlert = ImportAlert(
                 title: "未能导入音乐",
-                message: details
+                message: details.isEmpty
+                    ? "所选文件没有产生可保存的歌曲。"
+                    : details
             )
         } else {
+            let skippedText = skippedCount > 0 ? "\n已跳过 \(skippedCount) 首重复歌曲。" : ""
+            let issueText = details.isEmpty ? "" : "\n\(details)"
             importAlert = ImportAlert(
                 title: "部分音乐未导入",
-                message: "已成功导入 \(importedSongs.count) 首。\n\(details)"
+                message: "已成功导入 \(importedSongs.count) 首。\(skippedText)\(issueText)"
             )
         }
+    }
+
+    func cancelImport() {
+        guard isImporting else { return }
+        isImportCancelling = true
+        importCancellationRequested = true
     }
 
     @discardableResult
@@ -272,6 +325,15 @@ final class MusicLibrary: ObservableObject {
         } catch {
             try? fileManager.removeItem(at: destination)
             throw error
+        }
+    }
+
+    private func isDuplicate(_ candidate: Song, in collection: [Song]) -> Bool {
+        collection.contains { existing in
+            existing.title.caseInsensitiveCompare(candidate.title) == .orderedSame
+                && existing.displayArtist.caseInsensitiveCompare(candidate.displayArtist) == .orderedSame
+                && existing.fileSize == candidate.fileSize
+                && abs(existing.duration - candidate.duration) < 0.5
         }
     }
 
