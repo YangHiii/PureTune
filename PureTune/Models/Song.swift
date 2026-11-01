@@ -7,6 +7,7 @@ struct Song: Identifiable, Codable, Hashable, Sendable {
     let artist: String
     let album: String
     let duration: Double
+    let fileSize: Int64
     let dateAdded: Date
 
     init(
@@ -16,6 +17,7 @@ struct Song: Identifiable, Codable, Hashable, Sendable {
         artist: String = "",
         album: String = "",
         duration: Double = 0,
+        fileSize: Int64 = 0,
         dateAdded: Date = Date()
     ) {
         self.id = id
@@ -24,6 +26,7 @@ struct Song: Identifiable, Codable, Hashable, Sendable {
         self.artist = artist
         self.album = album
         self.duration = duration
+        self.fileSize = fileSize
         self.dateAdded = dateAdded
     }
 
@@ -39,6 +42,19 @@ struct Song: Identifiable, Codable, Hashable, Sendable {
         PlaybackTimeFormatter.string(from: duration)
     }
 
+    var fileSizeText: String {
+        guard fileSize > 0 else { return "" }
+        return ByteCountFormatter.string(
+            fromByteCount: fileSize,
+            countStyle: .file
+        )
+    }
+
+    var fileExtensionText: String {
+        let value = (fileName as NSString).pathExtension.uppercased()
+        return value.isEmpty ? "AUDIO" : value
+    }
+
     var searchableText: String {
         "\(title) \(artist) \(album)"
     }
@@ -50,6 +66,7 @@ struct Song: Identifiable, Codable, Hashable, Sendable {
         case artist
         case album
         case duration
+        case fileSize
         case dateAdded
     }
 
@@ -61,6 +78,7 @@ struct Song: Identifiable, Codable, Hashable, Sendable {
         artist = try container.decodeIfPresent(String.self, forKey: .artist) ?? ""
         album = try container.decodeIfPresent(String.self, forKey: .album) ?? ""
         duration = try container.decodeIfPresent(Double.self, forKey: .duration) ?? 0
+        fileSize = try container.decodeIfPresent(Int64.self, forKey: .fileSize) ?? 0
         dateAdded = try container.decodeIfPresent(Date.self, forKey: .dateAdded) ?? Date()
     }
 }

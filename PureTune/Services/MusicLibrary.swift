@@ -1,6 +1,7 @@
 import AVFoundation
 import Combine
 import Foundation
+import UniformTypeIdentifiers
 
 struct ImportAlert: Identifiable {
     let id = UUID()
@@ -8,10 +9,26 @@ struct ImportAlert: Identifiable {
     let message: String
 }
 
+struct ImportProgress: Equatable {
+    let completed: Int
+    let total: Int
+    let fileName: String
+
+    var fraction: Double {
+        guard total > 0 else { return 0 }
+        return min(max(Double(completed) / Double(total), 0), 1)
+    }
+
+    var statusText: String {
+        "正在处理 \(completed) / \(total)"
+    }
+}
+
 @MainActor
 final class MusicLibrary: ObservableObject {
     @Published private(set) var songs: [Song] = []
     @Published private(set) var isImporting = false
+    @Published private(set) var importProgress: ImportProgress?
     @Published var importAlert: ImportAlert?
 
     private let fileManager: FileManager
@@ -45,15 +62,28 @@ final class MusicLibrary: ObservableObject {
     }
 
     func importFiles(_ urls: [URL]) async {
-        guard !urls.isEmpty, !isImporting else { return }
+        guard !isImporting else { return }
+        guard !urls.isEmpty else {
+            reportEmptySelection()
+            return
+        }
 
         isImporting = true
-        defer { isImporting = false }
+        defer {
+            isImporting = false
+            importProgress = nil
+        }
 
         var importedSongs: [Song] = []
         var issues: [String] = []
 
-        for source in urls {
+        for (index, source) in urls.enumerated() {
+            importProgress = ImportProgress(
+                completed: index + 1,
+                total: urls.count,
+                fileName: source.lastPathComponent
+            )
+
             do {
                 importedSongs.append(try await importFile(source))
             } catch {
@@ -64,12 +94,22 @@ final class MusicLibrary: ObservableObject {
         if !importedSongs.isEmpty {
             songs.append(contentsOf: importedSongs)
             sortSongs()
-            persistIndex()
+            do {
+                try persistIndex()
+            } catch {
+                issues.append("曲库索引保存失败：\(error.localizedDescription)")
+            }
         }
 
-        guard !issues.isEmpty else { return }
+        if issues.isEmpty {
+            importAlert = ImportAlert(
+                title: "导入完成",
+                message: "已成功导入 \(importedSongs.count) 首歌曲。"
+            )
+            return
+        }
 
-        let details = issues.prefix(4).joined(separator: "\n")
+        let details = issues.prefix(5).joined(separator: "\n")
         if importedSongs.isEmpty {
             importAlert = ImportAlert(
                 title: "未能导入音乐",
@@ -100,7 +140,14 @@ final class MusicLibrary: ObservableObject {
         }
 
         songs.removeAll { $0.id == song.id }
-        persistIndex()
+        do {
+            try persistIndex()
+        } catch {
+            importAlert = ImportAlert(
+                title: "歌曲已删除，但索引保存失败",
+                message: error.localizedDescription
+            )
+        }
         return true
     }
 
@@ -111,8 +158,41 @@ final class MusicLibrary: ObservableObject {
         )
     }
 
+    func reportEmptySelection() {
+        importAlert = ImportAlert(
+            title: "没有收到文件",
+            message: "文件选择器没有返回可读取的文件。请重新打开「文件」App，确认歌曲已下载到本机后再试。"
+        )
+    }
+
     private func importFile(_ source: URL) async throws -> Song {
-        let pathExtension = source.pathExtension.lowercased()
+        let didAccess = source.startAccessingSecurityScopedResource()
+        defer {
+            if didAccess {
+                source.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let values = try? source.resourceValues(forKeys: [
+            .contentTypeKey,
+            .fileSizeKey,
+            .isRegularFileKey
+        ])
+
+        if values?.isRegularFile == false {
+            throw ImportFailure.notAFile
+        }
+
+        if let size = values?.fileSize, size <= 0 {
+            throw ImportFailure.emptyFile
+        }
+
+        var pathExtension = source.pathExtension.lowercased()
+        if pathExtension.isEmpty,
+           let preferred = values?.contentType?.preferredFilenameExtension {
+            pathExtension = preferred.lowercased()
+        }
+
         guard !pathExtension.isEmpty else {
             throw ImportFailure.missingFileExtension
         }
@@ -125,9 +205,15 @@ final class MusicLibrary: ObservableObject {
                 try Self.copyIntoLibrary(from: source, to: destination)
             }.value
 
+            let size = try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            guard size > 0 else {
+                throw ImportFailure.emptyFile
+            }
+
             return try await readSong(
                 at: destination,
                 fileName: fileName,
+                fileSize: Int64(size),
                 fallbackTitle: source.deletingPathExtension().lastPathComponent
             )
         } catch {
@@ -137,37 +223,50 @@ final class MusicLibrary: ObservableObject {
     }
 
     nonisolated private static func copyIntoLibrary(from source: URL, to destination: URL) throws {
-        let didAccess = source.startAccessingSecurityScopedResource()
-        defer {
-            if didAccess {
-                source.stopAccessingSecurityScopedResource()
-            }
+        let fileManager = FileManager.default
+        let sourceSize = try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize
+
+        if let sourceSize, sourceSize <= 0 {
+            throw ImportFailure.emptyFile
         }
 
-        var coordinatorError: NSError?
+        do {
+            try fileManager.copyItem(at: source, to: destination)
+            let copiedSize = try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            guard copiedSize > 0 else {
+                throw ImportFailure.emptyFile
+            }
+            return
+        } catch let directError as ImportFailure {
+            throw directError
+        } catch {
+            try? fileManager.removeItem(at: destination)
+        }
+
+        var coordinationError: NSError?
         var copyError: Error?
 
         NSFileCoordinator(filePresenter: nil).coordinate(
             readingItemAt: source,
             options: .withoutChanges,
-            error: &coordinatorError
+            error: &coordinationError
         ) { coordinatedURL in
             do {
-                try FileManager.default.copyItem(at: coordinatedURL, to: destination)
+                try fileManager.copyItem(at: coordinatedURL, to: destination)
             } catch {
                 copyError = error
             }
         }
 
-        if let coordinatorError {
-            throw coordinatorError
+        if let coordinationError {
+            throw ImportFailure.readFailed(coordinationError.localizedDescription)
         }
         if let copyError {
-            throw copyError
+            throw ImportFailure.copyFailed(copyError.localizedDescription)
         }
 
-        let size = try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size > 0 else {
+        let copiedSize = try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard copiedSize > 0 else {
             throw ImportFailure.emptyFile
         }
     }
@@ -175,37 +274,49 @@ final class MusicLibrary: ObservableObject {
     private func readSong(
         at url: URL,
         fileName: String,
+        fileSize: Int64,
         fallbackTitle: String
     ) async throws -> Song {
-        let asset = AVURLAsset(url: url)
-        let isPlayable: Bool
-        let durationTime: CMTime
+        let asset = AVURLAsset(
+            url: url,
+            options: [AVURLAssetPreferPreciseDurationAndTimingKey: true]
+        )
 
         do {
-            isPlayable = try await asset.load(.isPlayable)
-            durationTime = try await asset.load(.duration)
+            let isPlayable = try await asset.load(.isPlayable)
+            guard isPlayable else {
+                throw ImportFailure.notPlayable
+            }
+
+            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+            guard !audioTracks.isEmpty else {
+                throw ImportFailure.notAudio
+            }
+
+            let durationTime = try await asset.load(.duration)
+            let duration = CMTimeGetSeconds(durationTime)
+            guard duration.isFinite, duration > 0 else {
+                throw ImportFailure.notPlayable
+            }
+
+            let metadata = (try? await asset.load(.commonMetadata)) ?? []
+            let title = await stringValue(for: .commonKeyTitle, in: metadata)
+            let artist = await stringValue(for: .commonKeyArtist, in: metadata)
+            let album = await stringValue(for: .commonKeyAlbumName, in: metadata)
+
+            return Song(
+                fileName: fileName,
+                title: title ?? fallbackTitle,
+                artist: artist ?? "",
+                album: album ?? "",
+                duration: duration,
+                fileSize: fileSize
+            )
+        } catch let failure as ImportFailure {
+            throw failure
         } catch {
             throw ImportFailure.notPlayable
         }
-
-        let duration = CMTimeGetSeconds(durationTime)
-
-        guard isPlayable, duration.isFinite, duration > 0 else {
-            throw ImportFailure.notPlayable
-        }
-
-        let metadata = (try? await asset.load(.commonMetadata)) ?? []
-        let title = await stringValue(for: .commonKeyTitle, in: metadata)
-        let artist = await stringValue(for: .commonKeyArtist, in: metadata)
-        let album = await stringValue(for: .commonKeyAlbumName, in: metadata)
-
-        return Song(
-            fileName: fileName,
-            title: title ?? fallbackTitle,
-            artist: artist ?? "",
-            album: album ?? "",
-            duration: duration
-        )
     }
 
     private func stringValue(
@@ -234,13 +345,13 @@ final class MusicLibrary: ObservableObject {
             songs = existing.sorted(by: Self.sort)
 
             if existing.count != decoded.count {
-                persistIndex()
+                try? persistIndex()
             }
         } catch {
             songs = []
             importAlert = ImportAlert(
                 title: "曲库索引读取失败",
-                message: "已保留音乐文件，但暂时无法恢复歌曲列表。\n\(error.localizedDescription)"
+                message: "音乐文件仍保留在本机，但暂时无法恢复歌曲列表。\n\(error.localizedDescription)"
             )
         }
     }
@@ -257,32 +368,39 @@ final class MusicLibrary: ObservableObject {
         return comparison == .orderedAscending
     }
 
-    private func persistIndex() {
-        do {
-            let data = try JSONEncoder().encode(songs)
-            try data.write(to: indexURL, options: .atomic)
-        } catch {
-            importAlert = ImportAlert(
-                title: "无法保存本地曲库",
-                message: error.localizedDescription
-            )
-        }
+    private func persistIndex() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(songs)
+        try data.write(to: indexURL, options: .atomic)
     }
 }
 
 private enum ImportFailure: LocalizedError {
+    case notAFile
     case missingFileExtension
     case emptyFile
+    case readFailed(String)
+    case copyFailed(String)
+    case notAudio
     case notPlayable
 
     var errorDescription: String? {
         switch self {
+        case .notAFile:
+            return "所选项目不是可导入的文件。"
         case .missingFileExtension:
-            return "文件缺少扩展名，无法识别音频格式。"
+            return "文件缺少扩展名，系统无法识别音频格式。"
         case .emptyFile:
             return "文件内容为空，无法导入。"
+        case .readFailed(let detail):
+            return "无法读取文件：\(detail)"
+        case .copyFailed(let detail):
+            return "无法复制到本地音乐库：\(detail)"
+        case .notAudio:
+            return "文件中没有可播放的音轨。"
         case .notPlayable:
-            return "文件无法解码或不是有效的音频文件。"
+            return "文件无法解码，或不是有效的音频文件。"
         }
     }
 }
