@@ -5,6 +5,7 @@ struct SongRow: View {
     let fileURL: URL
     let isCurrent: Bool
     let isPlaying: Bool
+    let onTap: () -> Void
     var onDelete: (() -> Void)?
 
     private var palette: [Color] {
@@ -12,39 +13,46 @@ struct SongRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 13) {
-            ArtworkView(
-                song: song,
-                url: fileURL,
-                cornerRadius: 13,
-                isCurrent: isCurrent,
-                isPlaying: isPlaying
-            )
-            .frame(width: 52, height: 52)
+        HStack(spacing: 6) {
+            Button(action: onTap) {
+                HStack(spacing: 13) {
+                    ArtworkView(
+                        song: song,
+                        url: fileURL,
+                        cornerRadius: 13,
+                        isCurrent: isCurrent,
+                        isPlaying: isPlaying
+                    )
+                    .frame(width: 52, height: 52)
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(song.title)
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .foregroundStyle(AppTheme.textPrimary.opacity(isCurrent ? 1 : 0.92))
-                    .lineLimit(1)
-
-                HStack(spacing: 5) {
-                    Text(song.displayArtist)
-                        .lineLimit(1)
-
-                    if !song.album.isEmpty {
-                        Text("·")
-                        Text(song.album)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(song.title)
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundStyle(AppTheme.textPrimary.opacity(isCurrent ? 1 : 0.92))
                             .lineLimit(1)
+
+                        HStack(spacing: 5) {
+                            Text(song.displayArtist)
+                                .lineLimit(1)
+
+                            if !song.album.isEmpty {
+                                Text("·")
+                                Text(song.album)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.textTertiary)
                     }
+
+                    Spacer(minLength: 8)
+
+                    trailingStatus
                 }
-                .font(.caption)
-                .foregroundStyle(AppTheme.textTertiary)
+                .contentShape(Rectangle())
             }
-
-            Spacer(minLength: 8)
-
-            trailingStatus
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(song.title)，\(song.displayArtist)")
 
             if let onDelete {
                 Menu {

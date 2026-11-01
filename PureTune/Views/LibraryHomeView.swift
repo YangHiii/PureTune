@@ -279,12 +279,11 @@ struct LibraryHomeView: View {
                         fileURL: library.fileURL(for: song),
                         isCurrent: audio.currentSong?.id == song.id,
                         isPlaying: audio.isPlaying,
+                        onTap: {
+                            play(song, from: library.songs)
+                        },
                         onDelete: { requestDelete(song) }
                     )
-                    .onTapGesture {
-                        play(song, from: library.songs)
-                    }
-                    .accessibilityAddTraits(.isButton)
                 }
             }
         case .grid:
@@ -672,16 +671,16 @@ private struct CollectionSongsView: View {
                                 fileURL: library.fileURL(for: song),
                                 isCurrent: audio.currentSong?.id == song.id,
                                 isPlaying: audio.isPlaying,
+                                onTap: {
+                                    audio.play(song: song, from: songs) { item in
+                                        library.fileURL(for: item)
+                                    }
+                                },
                                 onDelete: {
                                     songToDelete = song
                                     showingDeleteConfirmation = true
                                 }
                             )
-                            .onTapGesture {
-                                audio.play(song: song, from: songs) { item in
-                                    library.fileURL(for: item)
-                                }
-                            }
                         }
                     }
                     .padding(.horizontal, 20)

@@ -48,15 +48,14 @@ struct SearchView: View {
                                 fileURL: library.fileURL(for: song),
                                 isCurrent: audio.currentSong?.id == song.id,
                                 isPlaying: audio.isPlaying,
+                                onTap: {
+                                    play(song)
+                                },
                                 onDelete: {
                                     songToDelete = song
                                     showingDeleteConfirmation = true
                                 }
                             )
-                            .onTapGesture {
-                                play(song)
-                            }
-                            .accessibilityAddTraits(.isButton)
                         }
                     }
                 }

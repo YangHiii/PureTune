@@ -355,9 +355,9 @@ final class AudioPlayer: ObservableObject {
             node.volume = 0
         }
 
-        configurePlayerNode(newNode, for: file)
         newNode.stop()
         newNode.volume = 0
+        configurePlayerNode(newNode, for: file)
 
         let target = min(max(seconds, 0), max(trackDuration - 0.01, 0))
         let startFrame = AVAudioFramePosition(target * sampleRate)
@@ -862,7 +862,7 @@ final class AudioPlayer: ObservableObject {
         audioSessionObservers.append(
             center.addObserver(
                 forName: AVAudioSession.interruptionNotification,
-                object: AVAudioSession.sharedInstance(),
+                object: nil,
                 queue: .main
             ) { [weak self] notification in
                 Task { @MainActor [weak self] in
@@ -874,7 +874,7 @@ final class AudioPlayer: ObservableObject {
         audioSessionObservers.append(
             center.addObserver(
                 forName: AVAudioSession.routeChangeNotification,
-                object: AVAudioSession.sharedInstance(),
+                object: nil,
                 queue: .main
             ) { [weak self] notification in
                 Task { @MainActor [weak self] in
@@ -886,7 +886,7 @@ final class AudioPlayer: ObservableObject {
         audioSessionObservers.append(
             center.addObserver(
                 forName: AVAudioSession.mediaServicesWereResetNotification,
-                object: AVAudioSession.sharedInstance(),
+                object: nil,
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
