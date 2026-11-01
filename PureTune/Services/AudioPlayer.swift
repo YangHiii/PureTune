@@ -55,12 +55,13 @@ final class AudioPlayer: ObservableObject {
     private var remoteCommandTargets: [(command: MPRemoteCommand, target: Any)] = []
     private var audioSessionObservers: [NSObjectProtocol] = []
     private var shouldResumeAfterInterruption = false
+    private var shouldResumeAfterRouteChange = false
     private var clockCancellable: AnyCancellable?
+    private var audioSessionConfigured = false
 
     init(settings: SettingsManager) {
         self.settings = settings
 
-        configureAudioSession()
         configureEngine()
         configureNormalizationNode()
         configureRemoteCommands()
@@ -155,7 +156,10 @@ final class AudioPlayer: ObservableObject {
             return
         }
 
-        activateAudioSession()
+        guard activateAudioSession() else {
+            isPlaying = false
+            return
+        }
         guard startEngineIfNeeded() else { return }
 
         node.volume = 1
@@ -209,8 +213,10 @@ final class AudioPlayer: ObservableObject {
         schedule(file: file, on: node, startFrame: segmentStartFrame, songID: song.id, generation: generation)
 
         if wasPlaying {
-            activateAudioSession()
-            guard startEngineIfNeeded() else { return }
+            guard activateAudioSession(), startEngineIfNeeded() else {
+                isPlaying = false
+                return
+            }
             node.volume = 1
             node.play()
             isPlaying = true
@@ -385,8 +391,7 @@ final class AudioPlayer: ObservableObject {
         queuePosition = currentIndex + 1
 
         if autoplay {
-            activateAudioSession()
-            if startEngineIfNeeded() {
+            if activateAudioSession(), startEngineIfNeeded() {
                 newNode.play()
                 isPlaying = true
             } else {
@@ -829,24 +834,60 @@ final class AudioPlayer: ObservableObject {
         )
     }
 
-    private func configureAudioSession() {
+    @discardableResult
+    private func configureAudioSessionIfNeeded() -> Bool {
+        if audioSessionConfigured {
+            return true
+        }
+
+        let session = AVAudioSession.sharedInstance()
+
         do {
-            try AVAudioSession.sharedInstance().setCategory(
+            try session.setCategory(
                 .playback,
-                mode: .default,
                 options: [.allowAirPlay, .allowBluetoothA2DP]
             )
         } catch {
-            playbackError = "音频会话配置失败：\(error.localizedDescription)"
+            do {
+                try session.setCategory(.playback, options: [])
+            } catch {
+                playbackError = audioSessionFailure(stage: "分类配置", error: error)
+                return false
+            }
+        }
+
+        do {
+            try session.setMode(.default)
+        } catch {
+            playbackError = audioSessionFailure(stage: "模式配置", error: error)
+            return false
+        }
+
+        audioSessionConfigured = true
+        return true
+    }
+
+    @discardableResult
+    private func activateAudioSession() -> Bool {
+        guard configureAudioSessionIfNeeded() else {
+            return false
+        }
+
+        do {
+            try AVAudioSession.sharedInstance().setActive(true, options: [])
+            return true
+        } catch {
+            playbackError = audioSessionFailure(stage: "激活", error: error)
+            return false
         }
     }
 
-    private func activateAudioSession() {
-        do {
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            playbackError = "无法启用音频播放：\(error.localizedDescription)"
+    private func audioSessionFailure(stage: String, error: Error) -> String {
+        let error = error as NSError
+        if error.domain == NSOSStatusErrorDomain {
+            return "音频会话\(stage)失败：\(error.localizedDescription)（OSStatus \(error.code)）"
         }
+        return "音频会话\(stage)失败：\(error.localizedDescription)"
     }
 
     private func deactivateAudioSession() {
@@ -912,7 +953,6 @@ final class AudioPlayer: ObservableObject {
             let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
             let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
             if shouldResumeAfterInterruption, options.contains(.shouldResume) {
-                configureAudioSession()
                 resume()
             }
             shouldResumeAfterInterruption = false
@@ -927,8 +967,19 @@ final class AudioPlayer: ObservableObject {
             return
         }
 
-        if reason == .oldDeviceUnavailable, isPlaying {
-            pause()
+        switch reason {
+        case .oldDeviceUnavailable:
+            if isPlaying {
+                shouldResumeAfterRouteChange = true
+                pause()
+            }
+        case .newDeviceAvailable:
+            if shouldResumeAfterRouteChange, currentSong != nil, !isPlaying {
+                shouldResumeAfterRouteChange = false
+                resume()
+            }
+        default:
+            break
         }
     }
 
@@ -961,7 +1012,7 @@ final class AudioPlayer: ObservableObject {
 
         engine = AVAudioEngine()
         engineConfigured = false
-        configureAudioSession()
+        audioSessionConfigured = false
         configureEngine()
         configureNormalizationNode()
         configureRemoteCommands()
