@@ -1,0 +1,89 @@
+name: Build unsigned IPA
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: |
+          set -euo pipefail
+          xcode-select -p
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: |
+          set -euo pipefail
+          xcodegen generate --spec project.yml
+
+      - name: Build unsigned app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project PureTune.xcodeproj \
+            -scheme PureTune \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build
+
+      - name: Verify app bundle
+        run: |
+          set -euo pipefail
+          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/PureTune.app"
+          test -d "$APP_PATH"
+          test -f "$APP_PATH/PureTune"
+          test ! -d "$APP_PATH/_CodeSignature"
+          test ! -f "$APP_PATH/embedded.mobileprovision"
+
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist")"
+          DISPLAY_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP_PATH/Info.plist")"
+          BACKGROUND_MODE="$(/usr/libexec/PlistBuddy -c 'Print :UIBackgroundModes:0' "$APP_PATH/Info.plist")"
+
+          test "$BUNDLE_ID" = "com.puretune.app"
+          test "$DISPLAY_NAME" = "PureTune"
+          test "$BACKGROUND_MODE" = "audio"
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/PureTune.app"
+          STAGING="$(mktemp -d "$RUNNER_TEMP/PureTune-ipa.XXXXXX")"
+          mkdir -p "$STAGING/Payload"
+          /usr/bin/ditto "$APP_PATH" "$STAGING/Payload/PureTune.app"
+
+          cd "$STAGING"
+          /usr/bin/zip -qry "$GITHUB_WORKSPACE/PureTune-unsigned.ipa" Payload
+
+          cd "$GITHUB_WORKSPACE"
+          /usr/bin/unzip -l PureTune-unsigned.ipa
+          /usr/bin/unzip -Z1 PureTune-unsigned.ipa | grep -qx 'Payload/PureTune.app/PureTune'
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PureTune-unsigned-IPA
+          path: PureTune-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,19 @@
+.DS_Store
+
+# Xcode
+DerivedData/
+build/
+PureTune.xcodeproj/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Build output
+Payload/
+*.ipa
+*.dSYM.zip
+PureTune-Project.zip
+
+# Swift Package Manager
+.build/
