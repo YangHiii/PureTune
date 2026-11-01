@@ -7,6 +7,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-15
@@ -87,3 +90,14 @@ jobs:
           path: PureTune-unsigned.ipa
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish unsigned IPA release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "build-${GITHUB_RUN_NUMBER}" PureTune-unsigned.ipa \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "PureTune build ${GITHUB_RUN_NUMBER}" \
+            --notes "Unsigned IPA built from ${GITHUB_SHA}."
