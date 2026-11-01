@@ -3,7 +3,6 @@ import UIKit
 
 struct NowPlayingView: View {
     @EnvironmentObject private var audio: AudioPlayer
-    @EnvironmentObject private var clock: PlaybackClock
     @EnvironmentObject private var settings: SettingsManager
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
@@ -11,9 +10,6 @@ struct NowPlayingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let onOpenEffects: () -> Void
-
-    @State private var scrubTime: Double?
-    @State private var isScrubbing = false
 
     init(onOpenEffects: @escaping () -> Void = {}) {
         self.onOpenEffects = onOpenEffects
@@ -44,10 +40,6 @@ struct NowPlayingView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .onChange(of: audio.currentSong?.id) { _ in
-            scrubTime = nil
-            isScrubbing = false
-        }
     }
 
     private var isDark: Bool {
@@ -134,7 +126,7 @@ struct NowPlayingView: View {
 
             VStack(spacing: 18) {
                 songInformation(song)
-                timeline
+                PlaybackTimeline()
                 controls
                 volumeControl
             }
@@ -152,7 +144,7 @@ struct NowPlayingView: View {
 
             VStack(spacing: 18) {
                 songInformation(song)
-                timeline
+                PlaybackTimeline()
                 controls
                 volumeControl
             }
@@ -325,41 +317,6 @@ struct NowPlayingView: View {
         .scrollIndicators(.hidden)
     }
 
-    private var timeline: some View {
-        VStack(spacing: 9) {
-            Slider(
-                value: Binding(
-                    get: { scrubTime ?? clock.time },
-                    set: { scrubTime = $0 }
-                ),
-                in: 0...max(audio.duration, 0.01),
-                onEditingChanged: { editing in
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        isScrubbing = editing
-                    }
-
-                    guard !editing, let value = scrubTime else { return }
-                    audio.seek(to: value)
-                    scrubTime = nil
-                }
-            )
-            .tint(AppTheme.ice)
-            .scaleEffect(isScrubbing ? 1.03 : 1)
-            .disabled(audio.duration <= 0)
-
-            HStack {
-                Text(PlaybackTimeFormatter.string(from: scrubTime ?? clock.time))
-                Spacer()
-                Text(PlaybackTimeFormatter.string(from: audio.duration))
-            }
-            .font(.caption2.monospacedDigit())
-            .foregroundStyle(AppTheme.textTertiary)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
-        .glassPanel(cornerRadius: 20, strokeOpacity: 0.11)
-    }
-
     private var controls: some View {
         HStack(spacing: 8) {
             GlassIconButton(
@@ -480,6 +437,53 @@ struct NowPlayingView: View {
         isDark
             ? .white
             : UIColor(red: 0.08, green: 0.10, blue: 0.16, alpha: 1)
+    }
+}
+
+private struct PlaybackTimeline: View {
+    @EnvironmentObject private var audio: AudioPlayer
+    @EnvironmentObject private var clock: PlaybackClock
+
+    @State private var scrubTime: Double?
+    @State private var isScrubbing = false
+
+    var body: some View {
+        VStack(spacing: 9) {
+            Slider(
+                value: Binding(
+                    get: { scrubTime ?? clock.time },
+                    set: { scrubTime = $0 }
+                ),
+                in: 0...max(audio.duration, 0.01),
+                onEditingChanged: { editing in
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        isScrubbing = editing
+                    }
+
+                    guard !editing, let value = scrubTime else { return }
+                    audio.seek(to: value)
+                    scrubTime = nil
+                }
+            )
+            .tint(AppTheme.ice)
+            .scaleEffect(isScrubbing ? 1.03 : 1)
+            .disabled(audio.duration <= 0)
+
+            HStack {
+                Text(PlaybackTimeFormatter.string(from: scrubTime ?? clock.time))
+                Spacer()
+                Text(PlaybackTimeFormatter.string(from: audio.duration))
+            }
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(AppTheme.textTertiary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        .glassPanel(cornerRadius: 20, strokeOpacity: 0.11)
+        .onChange(of: audio.currentSong?.id) { _ in
+            scrubTime = nil
+            isScrubbing = false
+        }
     }
 }
 

@@ -64,6 +64,7 @@ final class AudioPlayer: ObservableObject {
     private var shouldResumeAfterRouteChange = false
     private var clockCancellable: AnyCancellable?
     private var audioSessionConfigured = false
+    private var appIsActive = true
 
     init(settings: SettingsManager) {
         self.settings = settings
@@ -72,8 +73,10 @@ final class AudioPlayer: ObservableObject {
         configureNormalizationNode()
         configureRemoteCommands()
         observeAudioSession()
+        observeAppLifecycle()
         bindSettings()
-        startClock()
+        bindPlaybackClock()
+        updateClockSubscription()
 
         applyEqualizerSettings(animated: false)
         applyNormalizationGain(0, animated: false)
@@ -756,17 +759,38 @@ final class AudioPlayer: ObservableObject {
         }
     }
 
-    private func startClock() {
-        clockCancellable = Timer.publish(every: 0.5, on: .main, in: .common)
-            .autoconnect()
+    private func bindPlaybackClock() {
+        $isPlaying
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    self?.refreshClock()
+                    self?.updateClockSubscription()
                 }
             }
+            .store(in: &cancellables)
     }
 
-    private func refreshClock() {
+    private func updateClockSubscription() {
+        let shouldRun = appIsActive && isPlaying
+
+        if shouldRun {
+            guard clockCancellable == nil else { return }
+
+            clockCancellable = Timer.publish(every: 0.5, on: .main, in: .common)
+                .autoconnect()
+                .sink { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        self?.syncClockFromPlayer()
+                    }
+                }
+        } else {
+            clockCancellable?.cancel()
+            clockCancellable = nil
+        }
+    }
+
+    private func syncClockFromPlayer() {
         guard isPlaying,
               let node = activeNode,
               node.isPlaying,
@@ -780,7 +804,6 @@ final class AudioPlayer: ObservableObject {
         let elapsedWithinSegment = Double(playerTime.sampleTime) / playerTime.sampleRate
         let elapsed = Double(segmentStartFrame) / currentSampleRate + elapsedWithinSegment
         clock.update(min(max(elapsed, 0), max(duration, 0)))
-        updateNowPlayingInfo()
     }
 
     private func bindSettings() {
@@ -942,6 +965,42 @@ final class AudioPlayer: ObservableObject {
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.rebuildAudioEngine()
+                }
+            }
+        )
+    }
+
+    private func observeAppLifecycle() {
+        let center = NotificationCenter.default
+
+        audioSessionObservers.append(
+            center.addObserver(
+                forName: UIApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.appIsActive = true
+                    self.syncClockFromPlayer()
+                    self.updateNowPlayingInfo()
+                    self.updateClockSubscription()
+                }
+            }
+        )
+
+        audioSessionObservers.append(
+            center.addObserver(
+                forName: UIApplication.willResignActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.syncClockFromPlayer()
+                    self.appIsActive = false
+                    self.updateNowPlayingInfo()
+                    self.updateClockSubscription()
                 }
             }
         )
