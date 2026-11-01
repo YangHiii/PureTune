@@ -2,8 +2,10 @@ import SwiftUI
 
 struct SongRow: View {
     let song: Song
+    let fileURL: URL
     let isCurrent: Bool
     let isPlaying: Bool
+    var onDelete: (() -> Void)?
 
     private var palette: [Color] {
         ArtworkPalette.colors(for: song)
@@ -11,12 +13,19 @@ struct SongRow: View {
 
     var body: some View {
         HStack(spacing: 13) {
-            artwork
+            ArtworkView(
+                song: song,
+                url: fileURL,
+                cornerRadius: 13,
+                isCurrent: isCurrent,
+                isPlaying: isPlaying
+            )
+            .frame(width: 52, height: 52)
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(song.title)
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(isCurrent ? 1 : 0.92))
+                    .foregroundStyle(AppTheme.textPrimary.opacity(isCurrent ? 1 : 0.92))
                     .lineLimit(1)
 
                 HStack(spacing: 5) {
@@ -30,12 +39,26 @@ struct SongRow: View {
                     }
                 }
                 .font(.caption)
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(AppTheme.textTertiary)
             }
 
             Spacer(minLength: 8)
 
             trailingStatus
+
+            if let onDelete {
+                Menu {
+                    Button(role: .destructive, action: onDelete) {
+                        Label("从曲库删除", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(AppTheme.textTertiary)
+                        .frame(width: 28, height: 36)
+                        .contentShape(Rectangle())
+                }
+            }
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 11)
@@ -50,8 +73,8 @@ struct SongRow: View {
                     .strokeBorder(
                         LinearGradient(
                             colors: [
-                                palette[0].opacity(0.42),
-                                Color.white.opacity(0.04)
+                                palette[0].opacity(0.48),
+                                AppTheme.hairline.opacity(0.2)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -63,44 +86,22 @@ struct SongRow: View {
         .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
-    private var artwork: some View {
-        RoundedRectangle(cornerRadius: 13, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: palette.map { $0.opacity(isCurrent ? 0.82 : 0.52) },
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .frame(width: 52, height: 52)
-            .overlay {
-                Image(systemName: isCurrent && isPlaying ? "waveform" : "music.note")
-                    .font(.system(size: 19, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.92))
-                    .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .stroke(Color.white.opacity(0.14), lineWidth: 0.7)
-            }
-    }
-
     private var trailingStatus: some View {
         VStack(alignment: .trailing, spacing: 4) {
             if isCurrent {
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(isPlaying ? AppTheme.mint : Color.white.opacity(0.55))
+                        .fill(isPlaying ? AppTheme.mint : AppTheme.textTertiary)
                         .frame(width: 5, height: 5)
 
                     Text(isPlaying ? "播放中" : "已暂停")
                         .font(.caption2.weight(.semibold))
                 }
-                .foregroundStyle(.white.opacity(0.72))
+                .foregroundStyle(AppTheme.textSecondary)
             } else if song.duration > 0 {
                 Text(song.durationText)
                     .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.39))
+                    .foregroundStyle(AppTheme.textTertiary.opacity(0.8))
             }
 
             HStack(spacing: 5) {
@@ -110,7 +111,7 @@ struct SongRow: View {
                 }
             }
             .font(.system(size: 9, weight: .medium, design: .rounded))
-            .foregroundStyle(.white.opacity(0.27))
+            .foregroundStyle(AppTheme.textTertiary.opacity(0.66))
             .lineLimit(1)
         }
     }

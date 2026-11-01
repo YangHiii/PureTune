@@ -1,23 +1,49 @@
 # PureTune（纯音）
 
-PureTune 是一个完全离线的 iOS 本地音乐播放器。应用不包含账号、登录、广告、推荐、会员、在线音乐服务或任何业务网络请求。导入的音频只保存在应用自己的沙盒内。
+PureTune 是一个完全离线的 iOS 本地音乐播放器。应用不包含账号、登录、广告、会员、在线音乐服务或业务网络请求。导入的音频只保存在应用自己的沙盒内。
 
-## 功能
+当前版本：`2.1.0 (3)`，最低支持 iOS 16。
 
-- 使用 `UIDocumentPickerViewController` 多选导入音频，以 `asCopy` 模式先由系统复制文件，兼容本地文件、iCloud Drive 和第三方文件提供器。
-- 导入时显示文件级进度，并区分空文件、无扩展名、无音轨、解码失败等错误；不会再出现无提示失败。
-- 使用 `AVURLAsset` 读取标题、歌手、专辑和时长，缺失字段会使用安全默认值。
-- 导入后校验音轨、可播放性和时长，验证失败会自动清理残留文件。
-- 本地曲库保存在 JSON 索引中，重启应用后仍会恢复，并自动忽略已丢失的文件。
-- 支持按标题或最近添加排序、按歌曲/歌手/专辑搜索、左滑删除。
-- 支持播放、暂停、上一首、下一首、进度显示和拖动跳转。
-- 播放队列与曲库自动同步，删除歌曲后会修复当前播放位置。
-- 配置 `AVAudioSession.playback` 与 `UIBackgroundModes = audio`，支持后台播放。
-- 使用 `MPNowPlayingInfoCenter` 显示锁屏歌曲信息。
-- 使用 `MPRemoteCommandCenter` 处理锁屏/耳机的播放、暂停、上一首、下一首和进度跳转。
-- 处理音频中断和外接设备断开，避免意外继续播放。
-- 使用 Material、柔和极光和半透明描边构建毛玻璃界面，兼容 iOS 16 至 iOS 27 的系统视觉演进。
-- 内置 PureTune 玻璃风格应用图标。
+## 核心能力
+
+### 本地音乐库
+
+- 使用 `UIDocumentPickerViewController` 多选导入音频，以 `asCopy` 模式兼容“我的 iPhone”、iCloud Drive 和第三方文件提供器。
+- 导入时显示逐文件进度，并区分空文件、无扩展名、无音轨、解码失败和复制失败。
+- 使用 `AVURLAsset` 读取标题、歌手、专辑和时长，导入后验证可播放性与时长。
+- 曲库索引保存在 `Documents/PureTune/library.json`，最近播放历史保存在 `history.json`。
+- 支持最近播放、最近添加、歌曲、专辑、艺术家分类。
+- 支持列表与网格切换、按标题或最近添加排序、搜索和删除。
+- 支持从音频文件读取内嵌封面，使用内存缓存并异步加载，避免阻塞列表滚动。
+
+### 真实音频处理
+
+- 播放引擎由 `AVPlayer` 迁移为 `AVAudioEngine`。
+- 使用双 `AVAudioPlayerNode` 实现切歌时同时淡出旧曲、淡入新曲。
+- 10 段 `AVAudioUnitEQ`：31 Hz、62 Hz、125 Hz、250 Hz、500 Hz、1 kHz、2 kHz、4 kHz、8 kHz、16 kHz。
+- EQ 预设：原声、流行、摇滚、古典、爵士、人声、低音增强、自定义。
+- EQ 参数切换使用短时平滑插值，避免突然跳变产生爆音。
+- 自定义 EQ、预设、开关、音量、淡入淡出和播放速度均持久化保存。
+- 音量均衡通过离线分析文件真实 PCM 响度与峰值计算安全增益，不使用固定增益冒充。
+- 播放速度使用 `AVAudioUnitTimePitch`，保持音高不变，支持 0.75x、1.0x、1.25x、1.5x、2.0x。
+- 音源信息直接读取当前文件的格式、编码、采样率、位深、声道、文件大小、时长和可判定的无损/有损编码。
+
+### 播放与系统集成
+
+- 支持顺序播放、单曲循环、列表循环、随机播放。
+- 支持播放、暂停、上一首、下一首、拖动进度和应用内音量。
+- 支持后台播放、锁屏信息、锁屏进度拖动、耳机与蓝牙远程控制。
+- 处理音频中断、媒体服务重置和外接设备断开。
+- 播放进度由独立 `PlaybackClock` 发布，避免每 0.5 秒刷新音乐库和整个页面。
+
+### 视觉与主题
+
+- 支持跟随系统、浅色、深色三种主题，选择持久保存。
+- 音乐库、搜索、音效、设置、迷你播放器和完整播放器统一适配。
+- 使用系统 `Material`、动态光影、柔和极光和渐变描边构建玻璃层级。
+- 在支持原生 Liquid Glass 的新系统上继续沿用系统材质能力；旧系统使用 SwiftUI Material 降级。
+- 播放器使用真实封面作为模糊背景，并提供大封面、音源标签、播放模式、音量和音效入口。
+- 横竖屏均提供自适应布局。
 
 ## 项目结构
 
@@ -31,28 +57,35 @@ PureTune/
 │   ├── Design/
 │   │   └── AppTheme.swift
 │   ├── Models/
+│   │   ├── AudioSettings.swift
 │   │   └── Song.swift
 │   ├── Services/
+│   │   ├── ArtworkStore.swift
+│   │   ├── AudioEffectsManager.swift
+│   │   ├── AudioPlayer.swift
+│   │   ├── EqualizerManager.swift
 │   │   ├── MusicLibrary.swift
-│   │   └── AudioPlayer.swift
+│   │   ├── PlaybackClock.swift
+│   │   ├── SettingsManager.swift
+│   │   └── ThemeManager.swift
 │   ├── Views/
+│   │   ├── ArtworkView.swift
 │   │   ├── ContentView.swift
 │   │   ├── DocumentPicker.swift
+│   │   ├── EffectsView.swift
+│   │   ├── GlassTabBar.swift
+│   │   ├── LibraryHomeView.swift
 │   │   ├── MiniPlayerView.swift
 │   │   ├── NowPlayingView.swift
+│   │   ├── PlayerDock.swift
+│   │   ├── SearchView.swift
+│   │   ├── SettingsView.swift
 │   │   └── SongRow.swift
 │   └── Info.plist
 ├── project.yml
 ├── .github/workflows/build-unsigned-ipa.yml
 └── README.md
 ```
-
-- `App`：应用入口与依赖注入。
-- `Design`：极光背景、玻璃面板、按钮样式与动态封面配色。
-- `Models`：可持久化的歌曲模型和时间格式化。
-- `Services`：文件复制与校验、元数据、曲库索引、播放队列、后台会话和媒体控制。
-- `Views`：音乐库、系统文档选择器、搜索、导入进度、迷你播放器与全屏播放页。
-- `project.yml`：XcodeGen 工程定义，避免手工维护 `.pbxproj`。
 
 ## 数据存储
 
@@ -61,9 +94,30 @@ PureTune/
 ```text
 <App 沙盒>/Documents/PureTune/Music/
 <App 沙盒>/Documents/PureTune/library.json
+<App 沙盒>/Documents/PureTune/history.json
 ```
 
-`Music/` 保存导入后的音频副本，`library.json` 保存歌曲元数据。卸载应用会删除这些数据。
+`Music/` 保存导入后的音频副本，`library.json` 保存歌曲元数据，`history.json` 保存最近播放顺序。卸载应用会删除这些数据。
+
+## 音效实现说明
+
+音频节点链路：
+
+```mermaid
+flowchart LR
+    A[AVAudioPlayerNode A] --> M[Transition Mixer]
+    B[AVAudioPlayerNode B] --> M
+    M --> EQ[10 段 AVAudioUnitEQ]
+    EQ --> G[响度增益节点]
+    G --> T[AVAudioUnitTimePitch]
+    T --> O[Main Mixer / 系统输出]
+```
+
+- 两个播放节点用于切歌淡入淡出。
+- EQ 关闭时节点旁路，恢复未经 EQ 处理的声音。
+- 响度均衡只应用根据文件 PCM 分析得到的安全增益，并受峰值余量限制。
+- 音量控制是应用内增益，不越过系统或硬件音量限制。
+- 不会宣称 EQ、升采样或应用内增益提高了原始音源质量。
 
 ## 环境要求
 
@@ -80,7 +134,7 @@ xcodegen generate --spec project.yml
 open PureTune.xcodeproj
 ```
 
-在 Xcode 中选择自己的签名方式后可安装到设备。仅验证未签名构建时，可执行：
+仅验证未签名构建：
 
 ```bash
 xcodebuild \
@@ -99,34 +153,22 @@ xcodebuild \
 
 工作流文件：`.github/workflows/build-unsigned-ipa.yml`。
 
-1. 将整个目录推送到 GitHub 仓库的 `main` 分支。
-2. 工作流会在 `push`、`pull_request` 或手动触发时运行。
-3. macOS Runner 安装 XcodeGen、生成工程并执行 Release 构建。
-4. 构建后会校验 Bundle ID、显示名称、后台音频声明，以及产物确实未签名。
-5. 上传 Artifact：`PureTune-unsigned-IPA`，其中包含 `PureTune-unsigned.ipa`。
+1. 推送到 `main` 分支或手动触发。
+2. macOS Runner 安装 XcodeGen、生成工程并执行 Release 构建。
+3. 校验 Bundle ID、显示名称、后台音频声明、图标和未签名状态。
+4. 上传 Artifact `PureTune-unsigned-IPA` 并发布 `build-<run number>` Release。
 
-该 IPA 是未签名产物，必须由使用者自行签名后才能安装。本仓库不保存证书、描述文件或签名密钥。
-
-## Bundle Identifier
-
-默认 Bundle ID 为 `com.puretune.app`，显示名称为 `PureTune`。`Info.plist` 中的标识、版本、后台音频模式等由 `project.yml` 的 `info.properties` 生成；如需修改，请以 `project.yml` 为准，再重新执行 `xcodegen generate`。
+未签名 IPA 必须由使用者自行签名，或使用 TrollStore 等工具安装。
 
 ## 音频格式说明
 
-导入器接受系统识别的音频类型，实际可用格式取决于 iOS 的 AVFoundation 解码器。MP3、AAC/M4A、WAV、AIFF 是优先验证格式；FLAC 等格式需在目标系统版本上实测。
+导入器接受系统可识别的音频文件。实际播放取决于 iOS 的 AVFoundation 解码器；MP3、AAC/M4A、WAV、AIFF 是优先验证格式，FLAC 等格式需在目标系统版本上实测。
 
-如果歌曲位于 iCloud Drive，选择器会先等待系统下载副本；下载失败或提供器没有返回 URL 时，应用会显示明确错误，而不是静默返回空曲库。
-
-## 导入问题排查
-
-1. 确认文件位于「文件」App 的「我的 iPhone」或「iCloud 云盘」，且云朵图标已下载完成。
-2. 点击应用右上角 `+`，可一次选择多首歌曲。
-3. 导入完成后应出现成功提示；若有文件失败，提示会列出具体文件名和原因。
-4. 如果文件被系统判定为不可解码，请先在「文件」App 中确认它能被系统预览，或转换为 MP3、M4A、WAV、AIFF。
+如果歌曲位于 iCloud Drive，选择器会先等待系统下载副本；下载失败或提供器没有返回 URL 时，应用会显示明确错误。
 
 ## 隐私边界
 
 - 不请求网络权限，不包含网络请求代码。
 - 不申请账号、通讯录、相册、位置或麦克风权限。
 - 不上传、分析或收集用户音乐库和个人信息。
-- 所有音频副本和索引都留在应用沙盒内。
+- 所有音频副本、索引和最近播放历史都留在应用沙盒内。

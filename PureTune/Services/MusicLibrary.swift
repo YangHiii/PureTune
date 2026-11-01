@@ -27,6 +27,7 @@ struct ImportProgress: Equatable {
 @MainActor
 final class MusicLibrary: ObservableObject {
     @Published private(set) var songs: [Song] = []
+    @Published private(set) var recentlyPlayedIDs: [UUID] = []
     @Published private(set) var isImporting = false
     @Published private(set) var importProgress: ImportProgress?
     @Published var importAlert: ImportAlert?
@@ -34,6 +35,7 @@ final class MusicLibrary: ObservableObject {
     private let fileManager: FileManager
     private let musicDirectory: URL
     private let indexURL: URL
+    private let historyURL: URL
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
@@ -42,6 +44,7 @@ final class MusicLibrary: ObservableObject {
         let storage = documents.appendingPathComponent("PureTune", isDirectory: true)
         musicDirectory = storage.appendingPathComponent("Music", isDirectory: true)
         indexURL = storage.appendingPathComponent("library.json")
+        historyURL = storage.appendingPathComponent("history.json")
 
         do {
             try fileManager.createDirectory(
@@ -49,6 +52,7 @@ final class MusicLibrary: ObservableObject {
                 withIntermediateDirectories: true
             )
             loadIndex()
+            loadHistory()
         } catch {
             importAlert = ImportAlert(
                 title: "无法创建本地音乐库",
@@ -59,6 +63,24 @@ final class MusicLibrary: ObservableObject {
 
     func fileURL(for song: Song) -> URL {
         musicDirectory.appendingPathComponent(song.fileName)
+    }
+
+    var recentlyPlayedSongs: [Song] {
+        let lookup = Dictionary(uniqueKeysWithValues: songs.map { ($0.id, $0) })
+        return recentlyPlayedIDs.compactMap { lookup[$0] }
+    }
+
+    var totalFileSize: Int64 {
+        songs.reduce(0) { $0 + $1.fileSize }
+    }
+
+    func markPlayed(_ song: Song) {
+        recentlyPlayedIDs.removeAll { $0 == song.id }
+        recentlyPlayedIDs.insert(song.id, at: 0)
+        if recentlyPlayedIDs.count > 60 {
+            recentlyPlayedIDs.removeLast(recentlyPlayedIDs.count - 60)
+        }
+        persistHistory()
     }
 
     func importFiles(_ urls: [URL]) async {
@@ -140,6 +162,9 @@ final class MusicLibrary: ObservableObject {
         }
 
         songs.removeAll { $0.id == song.id }
+        recentlyPlayedIDs.removeAll { $0 == song.id }
+        persistHistory()
+
         do {
             try persistIndex()
         } catch {
@@ -149,6 +174,34 @@ final class MusicLibrary: ObservableObject {
             )
         }
         return true
+    }
+
+    func reconcileLibrary() {
+        let originalCount = songs.count
+        songs = songs.filter {
+            fileManager.fileExists(atPath: fileURL(for: $0).path)
+        }
+
+        let validIDs = Set(songs.map(\.id))
+        recentlyPlayedIDs = recentlyPlayedIDs.filter { validIDs.contains($0) }
+
+        do {
+            try persistIndex()
+            persistHistory()
+
+            let removed = originalCount - songs.count
+            importAlert = ImportAlert(
+                title: removed > 0 ? "曲库检查完成" : "曲库状态正常",
+                message: removed > 0
+                    ? "已清理 \(removed) 条失效记录，音乐文件本身未被删除。"
+                    : "所有歌曲文件均可访问。"
+            )
+        } catch {
+            importAlert = ImportAlert(
+                title: "曲库检查未完成",
+                message: error.localizedDescription
+            )
+        }
     }
 
     func presentImportError(_ error: Error) {
@@ -354,6 +407,20 @@ final class MusicLibrary: ObservableObject {
                 message: "音乐文件仍保留在本机，但暂时无法恢复歌曲列表。\n\(error.localizedDescription)"
             )
         }
+    }
+
+    private func loadHistory() {
+        guard fileManager.fileExists(atPath: historyURL.path) else { return }
+        guard let data = try? Data(contentsOf: historyURL),
+              let ids = try? JSONDecoder().decode([UUID].self, from: data) else {
+            return
+        }
+        recentlyPlayedIDs = ids
+    }
+
+    private func persistHistory() {
+        guard let data = try? JSONEncoder().encode(recentlyPlayedIDs) else { return }
+        try? data.write(to: historyURL, options: .atomic)
     }
 
     private func sortSongs() {
